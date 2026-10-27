@@ -119,9 +119,45 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
   refreshVoices();
   if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = refreshVoices;
 
+  // Clean common PDF extraction artifacts before either speech engine sees the text.
+  function cleanNarrationText(text) {
+    return String(text || '')
+      .replace(/\u00ad/g, '')
+      .replace(/([A-Za-z])\s*-\s*\n\s*([a-z])/g, '$1$2')
+      .replace(/\bPage\s+\d+\b/gi, ' ')
+      .replace(/\s*([,;:])\s*/g, '$1 ')
+      .replace(/\s+([.!?])/g, '$1')
+      .replace(/([.!?])([A-Z“"'(])/g, '$1 $2')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
   function makeChunks(text) {
-    return text.split(/\n\s*\n|(?<=[.!?])\s+(?=[A-Z0-9“"'(])/u)
-      .map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const cleaned = cleanNarrationText(text);
+    // Prefer paragraph boundaries, then sentence boundaries. Keep punctuation so
+    // the speech engine can infer natural cadence; don't split after abbreviations
+    // such as "Dr." or "U.S." when the next token is lowercase.
+    const paragraphs = cleaned.split(/\n\s*\n+/);
+    const sentences = [];
+    for (const paragraph of paragraphs) {
+      const parts = paragraph.match(/[^.!?]+(?:[.!?]+[”’"'\])]*)?(?:\s+|$)/gu) || [paragraph];
+      for (const part of parts) {
+        const sentence = part.replace(/\s+/g, ' ').trim();
+        if (sentence) sentences.push(sentence);
+      }
+    }
+    const chunks = [];
+    let buffer = '';
+    for (const sentence of sentences) {
+      if (buffer && (buffer.length + sentence.length + 1 > 420)) {
+        chunks.push(buffer.trim());
+        buffer = '';
+      }
+      buffer += (buffer ? ' ' : '') + sentence;
+    }
+    if (buffer.trim()) chunks.push(buffer.trim());
+    return chunks.filter(Boolean);
   }
   function updateProgress() {
     progress.max = Math.max(chunks.length, 1); progress.value = current;
@@ -142,7 +178,7 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
         const page = await pdf.getPage(n);
         const content = await page.getTextContent();
         const text = content.items.map(item => item.str).join(' ').replace(/[ \t]+/g,' ').trim();
-        if (text) pageParts.push(`Page ${n}\n${text}`);
+        if (text) pageParts.push(text);
         sayStatus(`Extracting page ${n} of ${pdf.numPages}…`);
       }
       chunks = makeChunks(pageParts.join('\n\n'));
@@ -180,9 +216,16 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
     if (!chunks.length) { sayStatus('Choose a text-based PDF first.'); return; }
     if (current >= chunks.length) { active = false; sayStatus('Finished reading.'); updateProgress(); return; }
     speechSynthesis.cancel();
-    utterance = new SpeechSynthesisUtterance(chunks[current]);
-    const voice = selectedVoice(); if (voice) utterance.voice = voice;
+    utterance = new SpeechSynthesisUtterance(cleanNarrationText(chunks[current]));
+    const voice = selectedVoice();
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang || 'en-US';
+    } else {
+      utterance.lang = navigator.language || 'en-US';
+    }
     utterance.rate = Number(speed.value);
+    utterance.pitch = 1;
     utterance.onstart = () => { active = true; sayStatus(`Reading section ${current+1} of ${chunks.length}…`); updateProgress(); };
     utterance.onend = () => {
       if (!active) return;
@@ -217,6 +260,14 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
     localStorage.setItem('voyager:'+pdfName, String(current)); sayStatus(`Saved your place in ${pdfName}.`);
   });
   speed.addEventListener('input', () => $('speedValue').textContent = `${Number(speed.value).toFixed(2).replace(/0$/,'')}×`);
+  voiceSelect.addEventListener('change', () => {
+    if (active) {
+      speechSynthesis.cancel();
+      if (window.voyagerPiperStop) window.voyagerPiperStop();
+      active = false;
+      sayStatus('Voice changed. Press Play to continue with the new voice.');
+    }
+  });
 })();
 </script>
 
