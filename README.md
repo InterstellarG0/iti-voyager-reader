@@ -1,41 +1,26 @@
- ITI Voyager Reader - starter prototype
+# ITI Voyager — Piper Voice Lab
 
-A phone-friendly PDF text-to-speech reader prototype by Interstellar Technologies Initiative.
+This is an isolated evaluation page. It does not modify or replace Voyager Reader's working `index.html` and does not pretend that Piper is already integrated.
 
- Current features
-- Choose a PDF from the device
-- Extract selectable text in the browser with PDF.js
-- Play, pause, stop, move backward/forward by section
-- Choose from browser/device voices and adjust speech speed
-- Save a basic reading position in browser local storage
-- Responsive dark interface with large controls
+## Selected voice (2026-10-27)
+- Model: `en_US-libritts_r-medium`
+- Sample-browser label: `lilbritts_r`
+- Speaker ID shown by the user: `3922`
+- Reference: https://rhasspy.github.io/piper-samples/#en_US-libritts_r-medium
 
-Important limitations
-- **This is a prototype, not a finished offline package.** PDF.js and its worker are loaded from a CDN in this starter. First-time PDF import therefore needs an internet connection.
-- For a truly offline release, include PDF.js files in the repository and configure a service worker/PWA or serve the files from a local secure origin.
-- Browser speech voices vary by device. For natural neural offline narration, users can install a compatible Android text-to-speech engine/voice. A future native Android wrapper could integrate a local neural engine more reliably.
-- Scanned PDFs need OCR; this prototype only extracts selectable text.
-- Speech pause/resume and voice behavior differ across browsers.
-- This prototype does not upload PDFs. The document is read in the browser; bookmark position is stored locally by filename.
+The voice is selected as the baseline, but the sample label-to-speaker-ID mapping must be verified against model metadata before claiming it is wired into the reader. This lab currently links to the sample catalog; it does not yet synthesize speech with this model inside the page.
 
-Quick test
-1. Open `index.html` in a browser while connected to the internet.
-2. Select a text-based PDF.
-3. Choose an available voice and press Play.
-4. Test pause, stop, section navigation, speed, and Save place.
+## Quick test
+1. Open `index.html` through GitHub Pages or a local HTTP server (not `file://` if browser restrictions interfere).
+2. Click **Open Piper browser demo**.
+3. Copy the same audition paragraph and paste it into the demo.
+4. Listen for American English pronunciation, cadence, clarity, and long-session comfort.
 
-Suggested next iteration
-1. Bundle PDF.js locally and verify its license/notices.
-2. Add robust page/paragraph navigation and a saved library.
-3. Add OCR as an optional offline module.
-4. Benchmark offline neural TTS options on target Android hardware.
-5. Add a PWA service worker and test airplane-mode behavior.
-6. Add a proper repository license after deciding how ITI wants to license the app and dependencies.
+The linked upstream browser demo is a separate experiment and may not bundle the selected LibriTTS-R speaker. Use the sample catalog link to confirm the target voice; actual integration still requires a compatible browser runtime plus the model and matching JSON configuration. The page calls out Lessac as a candidate requiring its ONNX model and matching JSON config to be added. Spanish needs a separate voice model. Voice files may be tens of megabytes and each voice's license must be reviewed before redistribution/commercial deployment.
 
-Repository structure
-- `index.html` — prototype UI and logic
-- `manifest.webmanifest` — installable web-app metadata
-- `README.md` — setup and limitations
+## Upstream references
+- https://github.com/piper-tts/piper-tts.github.io
+- https://tderflinger.github.io/piper-docs/about/voices/
 
-License
-No project license has been selected yet. Do not assume the code is open-source licensed until ITI adds a license file.
+## Important
+This is a test harness and listening workflow, not a finished Piper integration. No paid API, token, or hosted speech request is used by this page itself.
