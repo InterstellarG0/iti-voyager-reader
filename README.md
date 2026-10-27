@@ -1,28 +1,48 @@
 # ITI Voyager Reader
 
-A lightweight browser-based PDF reader. The `main` branch is the stable baseline; `iti-piper-voice-lab` contains experimental Piper integration in the reader dropdown.
+**Listen to text-based PDFs in your browser.** ITI Voyager Reader is a lightweight, mobile-friendly reader from Interstellar Technologies Initiative. It extracts PDF text locally in the browser, offers browser-provided voices, and includes an experimental Piper neural voice option.
 
-## Experimental Piper integration
+**Try it:** https://interstellarg0.github.io/iti-voyager-reader/
 
-- `voice-lab.html`: voice selection notes and links.
-- `piper-engine.js`: browser Piper engine adapted for this experiment.
-- `piper-reader-test.html`: isolated PDF-to-Piper synthesis test.
-- On this lab branch only, the main reader dropdown includes `Piper — lilbritts_r`; browser voices remain available.
+## Current features
 
-Selected model: `en_US-libritts_r-medium`; sample label: `lilbritts_r`; source speaker ID `3922` maps to model speaker index `0` in the published model metadata. Model file is approximately 78.6 MB, plus its JSON configuration and browser runtime.
+- Load a text-based PDF from your device; the PDF itself is not uploaded by this app.
+- Read aloud with voices available from your browser or device.
+- Optional **Piper Voice Lab** neural narration using the `en_US-libritts_r-medium` voice model.
+- Adjust reading speed, pause, resume, stop, and move backward or forward through reading sections.
+- See extracted text and track reading progress.
+- Use **Save place** to bookmark your current section and restore it after reloading the page, for the same PDF filename in the same browser.
+- Text cleanup and sentence/paragraph chunking to improve pronunciation and pacing.
+- Mobile-friendly default browser voice selection and smaller Piper inference requests on mobile.
 
-The model and config are loaded from the upstream Piper voice repository. ONNX Runtime Web and phonemizer are loaded through browser module CDNs. The browser caches the model where supported. The first run requires internet access; this is not yet a fully bundled offline install.
+## Using the reader
 
-## Test steps
+1. Open the [live reader](https://interstellarg0.github.io/iti-voyager-reader/).
+2. Choose a text-based PDF.
+3. Select a browser voice, or choose **Piper Voice Lab — experimental**.
+4. Set your reading speed and press **Play**.
+5. Press **Save place** whenever you want to bookmark your current section.
 
-1. Serve the branch over HTTPS or localhost (ES modules, PDF.js, model fetches, and WASM do not work reliably from `file://`).
-2. Open `piper-reader-test.html`.
-3. Load Piper and wait for the model to finish loading.
-4. Choose a text-based PDF and extract its text, or use the sample text.
-5. Generate and play the narration; note any browser console or network errors.
+### Important notes
 
-## Status and safety
+- **Save place is manual.** Press Save place before closing or reloading if you want to bookmark the current section. The bookmark is stored in browser local storage and keyed by the PDF filename; clearing site data or using another browser/device will not carry it over.
+- **Piper is experimental.** Its first use downloads approximately 79 MB of model data, plus runtime dependencies. It needs a modern browser with WebAssembly support and an internet connection for initial downloads.
+- **Text-based PDFs only.** Scanned PDFs without selectable text require OCR, which is not included yet.
+- **Internet is currently required to load PDF.js and the initial Piper dependencies/model.** This is not yet a fully bundled offline installation.
+- Browser voices differ by device and operating system. Voice availability, background playback, and performance depend on the browser/device.
 
-The upstream Piper demo was manually confirmed to generate speech, but this repository's implementation—including the new dropdown path—has **not yet been executed end to end in a browser**. The lab branch adds Piper loading, synthesis, audio playback, pause/resume, stop, and section navigation hooks. Treat it as experimental. Do not merge until browser testing confirms model loading, phonemization, audio output, PDF extraction, playback controls, and acceptable licensing/redistribution terms. The `main` branch has not been changed.
+## Development and testing
 
-No paid speech API is used by this experiment.
+The app is a static browser project. The main files are:
+
+- `index.html` — reader interface, PDF extraction, browser speech, text cleanup, progress, and saved place.
+- `piper-engine.js` — experimental Piper inference engine.
+- `manifest.webmanifest` — web app metadata.
+
+For local testing, serve the project from localhost or HTTPS rather than opening the HTML with `file://`. Load a text-based PDF, test browser narration and navigation, then test Piper model loading, audio playback, pause/resume, and saved-place behavior.
+
+The current code has been committed to the default branch and the live GitHub Pages URL is available above. The code has been checked in the repository, but Piper audio has not yet been independently verified end-to-end across browsers and mobile devices. A previously reported Piper inference error on some document text may still need further testing.
+
+## Privacy
+
+The selected PDF is processed in the browser and is not uploaded by the reader. External resources are loaded for PDF.js and, when selected, Piper's model/runtime. The app uses local browser storage only for the saved reading position.
