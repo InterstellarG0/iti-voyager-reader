@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111116">
+<title>ITI Voyager — Piper Integration Test</title>
+<style>
+:root{color-scheme:dark;--bg:#111116;--panel:#1b1b23;--line:#343440;--gold:#e0b45b;--text:#f5f2ea;--muted:#b5b2bd}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#25202a,var(--bg) 60%);color:var(--text);font:16px/1.55 system-ui,sans-serif}.wrap{max-width:850px;margin:auto;padding:24px 16px 54px}h1{font-size:clamp(1.8rem,5vw,2.6rem);margin:.3rem 0}.muted,.status{color:var(--muted)}.panel{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:18px;margin:16px 0}label{display:block;font-weight:650;margin:10px 0 5px}textarea,input[type=file]{width:100%;background:#101016;color:var(--text);border:1px solid #484855;border-radius:9px;padding:12px;font:inherit}textarea{min-height:210px;resize:vertical}button{background:var(--gold);color:#17130b;border:0;border-radius:9px;padding:10px 14px;font:inherit;font-weight:750;cursor:pointer;margin:5px 5px 5px 0}button:disabled{opacity:.45;cursor:wait}.secondary{background:transparent;color:var(--text);border:1px solid var(--line)}progress{width:100%;height:12px}code{overflow-wrap:anywhere}.small{font-size:.9rem;color:var(--muted)}a{color:var(--gold)}#status{white-space:pre-wrap;overflow-wrap:anywhere}.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 9px;color:var(--muted);font-size:.82rem}
+</style>
+</head><body><main class="wrap">
+<p class="pill">ITI · ISOLATED EXPERIMENT</p><h1>Voyager + Piper integration test</h1>
+<p class="muted">This is a separate test page. It does not modify the stable reader. It loads the LibriTTS-R model in your browser, extracts PDF text locally, and synthesizes audio on-device. The first model download is about 79 MB.</p>
+<section class="panel"><h2>1. Load voice</h2><p>Selected model: <code>en_US-libritts_r-medium</code>. Speaker label <code>lilbritts_r</code> maps to model speaker index <code>0</code> for source speaker ID <code>3922</code>.</p><button id="load">Load Piper voice</button><progress id="progress" max="100" value="0" hidden></progress><p id="status" class="status" role="status" aria-live="polite">Ready. Click “Load Piper voice” to begin.</p><p class="small">Model files are fetched from the upstream Piper voice repository and cached by your browser where supported. This test requires internet access for the initial download.</p></section>
+<section class="panel"><h2>2. Use PDF text or paste text</h2><label for="pdf">Choose a PDF (text-based PDFs only)</label><input id="pdf" type="file" accept="application/pdf"><p class="small">PDF text extraction happens in this browser. Scanned pages require OCR, which this test does not include.</p><label for="text">Narration text</label><textarea id="text">Welcome aboard the ITI Voyager. Take a breath, settle in, and let's continue our journey. Today, we'll explore one idea at a time. You can relax, listen, and return to the page whenever you're ready.</textarea><div><button id="extract" class="secondary">Extract PDF text</button><button id="speak" disabled>Generate & play Piper audio</button><button id="stop" class="secondary">Stop audio</button></div><audio id="player" controls style="width:100%;margin-top:10px"></audio></section>
+<section class="panel"><h2>What this proves</h2><ul><li>Browser-side Piper synthesis using the selected multi-speaker model.</li><li>PDF text extraction feeding into Piper narration.</li><li>No paid API key or hosted speech-generation request.</li></ul><p class="small">This is an experimental page, not yet part of the stable reader. Browser compatibility, model licensing/redistribution, pause/resume, large-PDF chunking, and production error handling still need review before merging.</p><p><a href="./">Back to Voyager Reader</a> · <a href="https://rhasspy.github.io/piper-samples/#en_US-libritts_r-medium" target="_blank" rel="noopener">Voice sample reference</a></p></section>
+</main>
+<script type="module">
+import { PiperTTS, TextSplitterStream, RawAudio } from './piper-engine.js';
+import * as pdfjsLib from 'https://esm.sh/pdfjs-dist@4.10.38';
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+const MODEL='https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx';
+const CONFIG='https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json';
+const $=id=>document.getElementById(id); let tts=null, audioUrl=null, pdfText='';
+function status(message){$('status').textContent=message}
+$('load').addEventListener('click',async()=>{
+ $('load').disabled=true;$('progress').hidden=false;$('progress').value=5;status('Loading runtime and voice config…');
+ try{tts=await PiperTTS.from_pretrained(MODEL,CONFIG);$('progress').value=100;$('speak').disabled=false;status('Voice ready. Source speaker 3922 is model speaker index 0. Paste text or extract a PDF, then generate audio.');}
+ catch(e){console.error(e);status('Could not load Piper: '+(e?.message||e)+'\nTry refreshing or checking browser console/network access.');}
+ finally{$('load').disabled=false;}
+});
+$('extract').addEventListener('click',async()=>{
+ const file=$('pdf').files?.[0];if(!file){status('Choose a PDF first.');return;}
+ try{status('Reading PDF text locally…');const bytes=await file.arrayBuffer();const doc=await pdfjsLib.getDocument({data:bytes}).promise;let all=[];
+ for(let p=1;p<=doc.numPages;p++){const page=await doc.getPage(p);const content=await page.getTextContent();all.push(content.items.map(x=>x.str).join(' '));}
+ pdfText=all.join('\n\n');$('text').value=pdfText;status('Extracted text from '+doc.numPages+' page(s). '+pdfText.length+' characters ready for narration.');}
+ catch(e){console.error(e);status('PDF extraction failed: '+(e?.message||e));}
+});
+$('speak').addEventListener('click',async()=>{
+ if(!tts){status('Load the voice first.');return;}const text=$('text').value.trim();if(!text){status('Add narration text first.');return;}
+ $('speak').disabled=true;status('Generating speech in your browser. Longer passages can take a while…');
+ try{const streamer=new TextSplitterStream();streamer.push(text);streamer.close();let parts=[],rate=22050,total=0;
+ for await(const chunk of tts.stream(streamer,{speakerId:0,lengthScale:1.0})){const data=chunk.audio.audio;rate=chunk.audio.sampling_rate;parts.push(data);total+=data.length;}
+ const merged=new Float32Array(total);let offset=0;for(const part of parts){merged.set(part,offset);offset+=part.length;}
+ const wav=new RawAudio(merged,rate).toBlob();
+ if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=URL.createObjectURL(wav);$('player').src=audioUrl;await $('player').play();status('Speech generated successfully using Piper in this browser. Audio length: '+Math.round(total/rate)+' seconds.');
+ }catch(e){console.error(e);status('Speech generation failed: '+(e?.message||e));}
+ finally{$('speak').disabled=false;}
+});
+$('stop').addEventListener('click',()=>{$('player').pause();$('player').currentTime=0;status('Playback stopped.');});
+</script></body></html>
