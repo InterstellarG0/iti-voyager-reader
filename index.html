@@ -286,9 +286,24 @@ async function ensurePiper(){
  }
  return loading;
 }
+function normalizePiperText(text){
+ return String(text||'')
+  .replace(/\u00ad/g,'')
+  .replace(/\bPage\s+\d+\b/gi,' ')
+  .replace(/\s*&\s*/g,' and ')
+  .replace(/\s*—\s*/g, ', ')
+  .replace(/\s*–\s*/g, ', ')
+  .replace(/…+/g,'. ')
+  .replace(/\s+([,;:!?])/g,'$1')
+  .replace(/([,;:])(?=\S)/g,'$1 ')
+  .replace(/\s+/g,' ')
+  .trim();
+}
 window.voyagerPiperSpeak=async function(text){
  const id=++runId;
  try{
+  text=normalizePiperText(text);
+  if(!text){if(window.voyagerReaderPiperNext)window.voyagerReaderPiperNext();return;}
   const tts=await ensurePiper(); if(id!==runId)return;
   status.textContent='Generating Piper narration…';
   // Keep each inference request small so long PDF paragraphs don't stall phones.
