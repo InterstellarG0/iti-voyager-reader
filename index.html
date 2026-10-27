@@ -105,9 +105,16 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
     });
     const piperOpt = document.createElement('option');
     piperOpt.value = 'piper-libritts';
-    piperOpt.textContent = 'Piper — lilbritts_r (American English · downloads ~79 MB)';
+    piperOpt.textContent = 'Piper Voice Lab — experimental (downloads ~79 MB)';
     voiceSelect.appendChild(piperOpt);
-    if (previous && [...voiceSelect.options].some(o => o.value === previous)) voiceSelect.value = previous;
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+    if (previous && [...voiceSelect.options].some(o => o.value === previous)) {
+      voiceSelect.value = previous;
+    } else {
+      const browserDefault = voices.findIndex(v => v.default);
+      if (browserDefault >= 0) voiceSelect.value = String(browserDefault);
+      if (isMobile) sayStatus('Mobile-friendly browser voice selected. Piper remains available in the Voice Lab.');
+    }
   }
   refreshVoices();
   if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = refreshVoices;
@@ -233,7 +240,26 @@ window.voyagerPiperSpeak=async function(text){
  try{
   const tts=await ensurePiper(); if(id!==runId)return;
   status.textContent='Generating Piper narration…';
-  const stream=new TextSplitterStream();stream.push(text);stream.close();
+  // Keep each inference request small so long PDF paragraphs don't stall phones.
+  const mobile=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  const maxChars=mobile?180:320;
+  const splitter=new TextSplitterStream();
+  const sourceChunks=splitter.chunkText(text);
+  const shortChunks=[];
+  for(const sentence of sourceChunks){
+    if(sentence.length<=maxChars){shortChunks.push(sentence);continue;}
+    let rest=sentence;
+    while(rest.length>maxChars){
+      let cut=rest.lastIndexOf(' ',maxChars);
+      if(cut<Math.floor(maxChars*0.55))cut=maxChars;
+      shortChunks.push(rest.slice(0,cut).trim());
+      rest=rest.slice(cut).trim();
+    }
+    if(rest)shortChunks.push(rest);
+  }
+  const stream=new TextSplitterStream();
+  for(const piece of (shortChunks.length?shortChunks:[text])) stream.push(piece);
+  stream.close();
   const pieces=[];let count=0,sampleRate=22050;
   for await(const item of tts.stream(stream,{speakerId:0,lengthScale:1/Number(document.getElementById('speed').value)})){
    if(id!==runId)return;const data=item.audio.audio;sampleRate=item.audio.sampling_rate;pieces.push(data);count+=data.length;
