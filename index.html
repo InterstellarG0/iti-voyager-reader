@@ -96,7 +96,7 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
     const voices = speechSynthesis.getVoices();
     voiceSelect.innerHTML = '';
     if (!voices.length) {
-      const opt = document.createElement('option'); opt.textContent = 'No browser voices detected'; voiceSelect.appendChild(opt); return;
+      const opt = document.createElement('option'); opt.textContent = 'No browser voices detected'; opt.disabled = true; voiceSelect.appendChild(opt);
     }
     voices.forEach((v, i) => {
       const opt = document.createElement('option');
@@ -155,9 +155,16 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
     const voices = speechSynthesis.getVoices();
     return voices[Number(voiceSelect.value)] || voices.find(v => v.default) || null;
   }
+  window.voyagerReaderPiperNext = () => {
+    if (!active) return;
+    current++; updateProgress();
+    if (current < chunks.length) speakCurrent();
+    else { active = false; sayStatus('Finished reading.'); updateProgress(); }
+  };
   function speakCurrent() {
     if (voiceSelect.value === 'piper-libritts') {
       if (!chunks.length) { sayStatus('Choose a text-based PDF first.'); return; }
+      if (current >= chunks.length) { active = false; sayStatus('Finished reading.'); updateProgress(); return; }
       if (window.voyagerPiperSpeak) { window.voyagerPiperSpeak(chunks[current]); return; }
       sayStatus('Piper is starting up. If this message persists, reload the page.');
       return;
@@ -180,20 +187,22 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
   }
   $('play').addEventListener('click', () => {
     if (!chunks.length) { sayStatus('Choose a PDF first.'); return; }
+    if (voiceSelect.value === 'piper-libritts' && window.voyagerPiperResume) { active = true; window.voyagerPiperResume(); return; }
     if (speechSynthesis.paused) { speechSynthesis.resume(); active = true; return; }
     active = true; speakCurrent();
   });
   $('pause').addEventListener('click', () => {
+    if (voiceSelect.value === 'piper-libritts' && window.voyagerPiperPause) { window.voyagerPiperPause(); sayStatus('Paused.'); return; }
     if ('speechSynthesis' in window) { speechSynthesis.pause(); sayStatus('Paused.'); }
   });
   $('stop').addEventListener('click', () => {
-    speechSynthesis.cancel(); active = false; current = 0; updateProgress(); sayStatus('Stopped and returned to the beginning.');
+    speechSynthesis.cancel(); if (window.voyagerPiperStop) window.voyagerPiperStop(); active = false; current = 0; updateProgress(); sayStatus('Stopped and returned to the beginning.');
   });
   $('back').addEventListener('click', () => {
-    speechSynthesis.cancel(); active = false; current = Math.max(0,current-1); updateProgress(); sayStatus('Moved back one section.');
+    speechSynthesis.cancel(); if (window.voyagerPiperStop) window.voyagerPiperStop(); active = false; current = Math.max(0,current-1); updateProgress(); sayStatus('Moved back one section.');
   });
   $('forward').addEventListener('click', () => {
-    speechSynthesis.cancel(); active = false; current = Math.min(Math.max(0,chunks.length-1),current+1); updateProgress(); sayStatus('Moved forward one section.');
+    speechSynthesis.cancel(); if (window.voyagerPiperStop) window.voyagerPiperStop(); active = false; current = Math.min(Math.max(0,chunks.length-1),current+1); updateProgress(); sayStatus('Moved forward one section.');
   });
   $('bookmark').addEventListener('click', () => {
     if (!pdfName || !chunks.length) { sayStatus('Load a PDF before saving your place.'); return; }
@@ -249,6 +258,41 @@ window.voyagerPiperSpeak=async function(text){
   }
 };
 window.voyagerPiperStop=()=>{piperRun++;if(piperAudio){piperAudio.pause();piperAudio.currentTime=0;}};
+</script>
+<script type="module">
+import { PiperTTS, TextSplitterStream, RawAudio } from './piper-engine.js';
+const MODEL='https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx';
+const CONFIG='https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json';
+let piper=null, audio=null, loading=null, runId=0, objectUrl=null;
+const status=document.getElementById('status');
+async function ensurePiper(){
+ if(piper)return piper;
+ if(!loading){
+  status.textContent='Loading Piper voice and runtime. First load downloads about 79 MB…';
+  loading=PiperTTS.from_pretrained(MODEL,CONFIG).then(v=>{piper=v;audio=new Audio();return v;}).catch(e=>{loading=null;throw e;});
+ }
+ return loading;
+}
+window.voyagerPiperSpeak=async function(text){
+ const id=++runId;
+ try{
+  const tts=await ensurePiper(); if(id!==runId)return;
+  status.textContent='Generating Piper narration…';
+  const stream=new TextSplitterStream();stream.push(text);stream.close();
+  const pieces=[];let count=0,sampleRate=22050;
+  for await(const item of tts.stream(stream,{speakerId:0,lengthScale:1/Number(document.getElementById('speed').value)})){
+   if(id!==runId)return;const data=item.audio.audio;sampleRate=item.audio.sampling_rate;pieces.push(data);count+=data.length;
+  }
+  if(!count)throw new Error('Piper generated no audio. Check the browser console for the underlying model error.');
+  const merged=new Float32Array(count);let offset=0;for(const p of pieces){merged.set(p,offset);offset+=p.length;}
+  const wav=new RawAudio(merged,sampleRate).toBlob();if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(wav);
+  audio.src=objectUrl;audio.onended=()=>{if(id===runId&&window.voyagerReaderPiperNext)window.voyagerReaderPiperNext();};
+  await audio.play();status.textContent='Reading with Piper — lilbritts_r.';
+ }catch(e){console.error(e);status.textContent='Piper error: '+(e&&e.message?e.message:String(e));}
+};
+window.voyagerPiperPause=()=>{if(audio)audio.pause();};
+window.voyagerPiperResume=()=>{if(audio&&audio.src&&audio.paused&&audio.currentTime>0)audio.play().catch(e=>{status.textContent='Piper playback error: '+e.message;});else if(window.voyagerPiperSpeak)window.voyagerPiperSpeak('');};
+window.voyagerPiperStop=()=>{runId++;if(audio){audio.pause();audio.currentTime=0;audio.removeAttribute('src');}if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null;}};
 </script>
 </body>
 </html>
