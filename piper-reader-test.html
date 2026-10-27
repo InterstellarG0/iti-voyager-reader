@@ -16,7 +16,7 @@
 <section class="panel"><h2>What this proves</h2><ul><li>Browser-side Piper synthesis using the selected multi-speaker model.</li><li>PDF text extraction feeding into Piper narration.</li><li>No paid API key or hosted speech-generation request.</li></ul><p class="small">This is an experimental page, not yet part of the stable reader. Browser compatibility, model licensing/redistribution, pause/resume, large-PDF chunking, and production error handling still need review before merging.</p><p><a href="./">Back to Voyager Reader</a> · <a href="https://rhasspy.github.io/piper-samples/#en_US-libritts_r-medium" target="_blank" rel="noopener">Voice sample reference</a></p></section>
 </main>
 <script type="module">
-import { PiperTTS, TextSplitterStream } from './piper-engine.js';
+import { PiperTTS, TextSplitterStream, RawAudio } from './piper-engine.js';
 import * as pdfjsLib from 'https://esm.sh/pdfjs-dist@4.10.38';
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
 const MODEL='https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx';
@@ -42,7 +42,7 @@ $('speak').addEventListener('click',async()=>{
  try{const streamer=new TextSplitterStream();streamer.push(text);streamer.close();let parts=[],rate=22050,total=0;
  for await(const chunk of tts.stream(streamer,{speakerId:0,lengthScale:1.0})){const data=chunk.audio.audio;rate=chunk.audio.sampling_rate;parts.push(data);total+=data.length;}
  const merged=new Float32Array(total);let offset=0;for(const part of parts){merged.set(part,offset);offset+=part.length;}
- const wav=new (parts.length? (await import('./piper-engine.js')).RawAudio : (await import('./piper-engine.js')).RawAudio)(merged,rate).toBlob();
+ const wav=new RawAudio(merged,rate).toBlob();
  if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=URL.createObjectURL(wav);$('player').src=audioUrl;await $('player').play();status('Speech generated successfully using Piper in this browser. Audio length: '+Math.round(total/rate)+' seconds.');
  }catch(e){console.error(e);status('Speech generation failed: '+(e?.message||e));}
  finally{$('speak').disabled=false;}
