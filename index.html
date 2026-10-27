@@ -161,6 +161,12 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
     if (current < chunks.length) speakCurrent();
     else { active = false; sayStatus('Finished reading.'); updateProgress(); }
   };
+  window.voyagerReaderPiperNext = () => {
+    if (!active) return;
+    current++; updateProgress();
+    if (current < chunks.length) speakCurrent();
+    else { active = false; sayStatus('Finished reading.'); updateProgress(); }
+  };
   function speakCurrent() {
     if (voiceSelect.value === 'piper-libritts') {
       if (!chunks.length) { sayStatus('Choose a text-based PDF first.'); return; }
@@ -212,53 +218,7 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
 })();
 </script>
 
-<script type="module">
-import { PiperTTS, TextSplitterStream, RawAudio } from './piper-engine.js';
-const MODEL='https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx';
-const CONFIG='https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json';
-let piper=null, piperAudio=null, piperLoading=null, piperRun=0;
-const $p=id=>document.getElementById(id);
-async function ensurePiper(){
-  if(piper) return piper;
-  if(!piperLoading){
-    piperLoading=(async()=>{
-      $p('status').textContent='Loading Piper voice and runtime (first load ~79 MB)…';
-      piper=await PiperTTS.from_pretrained(MODEL,CONFIG);
-      if(!piperAudio) piperAudio=new Audio();
-      $p('status').textContent='Piper voice loaded.';
-      return piper;
-    })().catch(e=>{piperLoading=null;throw e;});
-  }
-  return piperLoading;
-}
-window.voyagerPiperSpeak=async function(text){
-  const run=++piperRun;
-  try{
-    await ensurePiper();
-    if(run!==piperRun)return;
-    const streamer=new TextSplitterStream();streamer.push(text);streamer.close();
-    const parts=[];let total=0,rate=22050;
-    for await(const chunk of piper.stream(streamer,{speakerId:0,lengthScale:1.0})){
-      if(run!==piperRun)return;
-      const audio=chunk.audio.audio;rate=chunk.audio.sampling_rate;parts.push(audio);total+=audio.length;
-    }
-    const merged=new Float32Array(total);let offset=0;
-    for(const part of parts){merged.set(part,offset);offset+=part.length;}
-    const blob=new RawAudio(merged,rate).toBlob();
-    if(piperAudio.src)URL.revokeObjectURL(piperAudio.src);
-    piperAudio.src=URL.createObjectURL(blob);
-    piperAudio.onended=()=>{
-      if(run!==piperRun)return;
-      if(window.voyagerPiperNext)window.voyagerPiperNext();
-    };
-    $p('status').textContent='Playing Piper narration…';
-    await piperAudio.play();
-  }catch(e){
-    console.error(e);$p('status').textContent='Piper error: '+(e?.message||e);
-  }
-};
-window.voyagerPiperStop=()=>{piperRun++;if(piperAudio){piperAudio.pause();piperAudio.currentTime=0;}};
-</script>
+
 <script type="module">
 import { PiperTTS, TextSplitterStream, RawAudio } from './piper-engine.js';
 const MODEL='https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx';
@@ -291,7 +251,7 @@ window.voyagerPiperSpeak=async function(text){
  }catch(e){console.error(e);status.textContent='Piper error: '+(e&&e.message?e.message:String(e));}
 };
 window.voyagerPiperPause=()=>{if(audio)audio.pause();};
-window.voyagerPiperResume=()=>{if(audio&&audio.src&&audio.paused&&audio.currentTime>0)audio.play().catch(e=>{status.textContent='Piper playback error: '+e.message;});else if(window.voyagerPiperSpeak)window.voyagerPiperSpeak('');};
+window.voyagerPiperResume=()=>{if(audio&&audio.src&&audio.paused&&audio.currentTime>0&&audio.currentTime<audio.duration)audio.play().catch(e=>{status.textContent='Piper playback error: '+e.message;});else if(window.voyagerReaderPiperNext)window.voyagerReaderPiperNext();};
 window.voyagerPiperStop=()=>{runId++;if(audio){audio.pause();audio.currentTime=0;audio.removeAttribute('src');}if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null;}};
 </script>
 </body>
