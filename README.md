@@ -2,20 +2,26 @@
 
 A lightweight browser-based PDF reader. The stable reader lives in `index.html`.
 
-## Piper voice experiment
+## Experimental Piper integration
 
-Open `voice-lab.html` to audition the selected voice and copy a consistent narration passage. The page links to the browser Piper demo that was tested during development.
+- `voice-lab.html`: voice selection notes and links.
+- `piper-engine.js`: browser Piper engine adapted for this experiment.
+- `piper-reader-test.html`: isolated PDF-to-Piper synthesis test.
 
-- Selected model candidate: `en_US-libritts_r-medium`
-- Sample label: `lilbritts_r`
-- Candidate speaker ID: `3922` (verify against the model metadata before shipping)
-- Browser demo: https://clowerweb.github.io/piper-tts-web-demo/
-- Upstream sample catalog: https://rhasspy.github.io/piper-samples/#en_US-libritts_r-medium
+Selected model: `en_US-libritts_r-medium`; sample label: `lilbritts_r`; source speaker ID `3922` maps to model speaker index `0` in the published model metadata. Model file is approximately 78.6 MB, plus its JSON configuration and browser runtime.
 
-## Current status
+The model and config are loaded from the upstream Piper voice repository. ONNX Runtime Web and phonemizer are loaded through browser module CDNs. The browser caches the model where supported. The first run requires internet access; this is not yet a fully bundled offline install.
 
-The browser demo generated speech successfully in a manual test. This does **not** mean Piper has been integrated into the reader. The reader currently retains its existing browser speech-synthesis behavior. No paid speech API is used by this experiment.
+## Test steps
 
-## Safe workflow
+1. Serve the branch over HTTPS or localhost (ES modules, PDF.js, model fetches, and WASM do not work reliably from `file://`).
+2. Open `piper-reader-test.html`.
+3. Load Piper and wait for the model to finish loading.
+4. Choose a text-based PDF and extract its text, or use the sample text.
+5. Generate and play the narration; note any browser console or network errors.
 
-Keep voice work on the `iti-piper-voice-lab` branch until the model/config pairing, browser runtime, licensing, PDF text handoff, and pause/resume/stop behavior have been tested end to end. Do not merge into `main` until the integration is verified.
+## Status and safety
+
+The browser demo was manually confirmed to generate speech. The new in-repository PDF-to-Piper page has been committed to the isolated branch but has **not yet been executed end to end in a browser**. It is an experimental integration test, not a production-ready reader change. The stable `index.html` matches `main` exactly. Do not merge until browser testing confirms model loading, phonemization, audio output, PDF extraction, and acceptable licensing/redistribution terms.
+
+No paid speech API is used by this experiment.
