@@ -2,7 +2,7 @@
 
 function cleanTextForTTS(text) { return String(text || '').replace(/\s+/g, ' ').trim(); }
 function chunkText(text) { return String(text || '').match(/[^.!?]+[.!?]*/g)?.map(s => s.trim()).filter(Boolean) || []; }
-async function cachedFetch(url) { const key = 'iti-piper-cache:' + url; try { const cached = await caches.open('iti-piper-models-v1'); const hit = await cached.match(url); if (hit) return hit; const response = await fetch(url); if (!response.ok) throw new Error('Model fetch failed: HTTP ' + response.status); await cached.put(url, response.clone()); return response; } catch (e) { throw e; } }
+async function cachedFetch(url) { let cache = null; try { if ('caches' in globalThis) cache = await caches.open('iti-piper-models-v1'); } catch (e) { console.warn('Cache unavailable; fetching directly:', e); } if (cache) { try { const hit = await cache.match(url); if (hit) return hit; } catch (e) { console.warn('Cache read failed; fetching directly:', e); } } const response = await fetch(url); if (!response.ok) throw new Error('Model fetch failed: HTTP ' + response.status + ' (' + url + ')'); if (cache) { try { await cache.put(url, response.clone()); } catch (e) { console.warn('Could not cache model response:', e); } } return response; }
 
 // Text splitting stream to break text into chunks
 export class TextSplitterStream {
@@ -107,6 +107,7 @@ export class PiperTTS {
     this.voiceConfig = voiceConfig;
     this.session = session;
     this.phonemeIdMap = null;
+    this.ort = null;
   }
 
   static async from_pretrained(modelPath, configPath) {
@@ -136,7 +137,9 @@ export class PiperTTS {
         }]
       });
       
-      return new PiperTTS(voiceConfig, session);
+      const instance = new PiperTTS(voiceConfig, session);
+      instance.ort = ort;
+      return instance;
     } catch (error) {
       console.error('Error loading Piper model:', error);
       throw error;
@@ -218,7 +221,8 @@ export class PiperTTS {
             const phonemeIds = this.phonemesToIds(textPhonemes);
             
             // Prepare tensors for Piper model
-            const ort = await import('onnxruntime-web');
+            const ort = this.ort;
+            if (!ort) throw new Error('ONNX Runtime was not initialized. Reload and try again.');
             
             const inputs = {
               'input': new ort.Tensor('int64', new BigInt64Array(phonemeIds.map(id => BigInt(id))), [1, phonemeIds.length]),
@@ -250,11 +254,8 @@ export class PiperTTS {
           }
         } catch (error) {
           console.error('Error generating audio:', error);
-          // Yield silence in case of error
-          yield {
-            text,
-            audio: new RawAudio(new Float32Array(22050), 22050)
-          };
+          // Surface synthesis failures instead of disguising them as silent audio.
+          throw new Error('Piper synthesis failed for this text chunk: ' + (error && error.message ? error.message : String(error)));
         }
       }
     }
