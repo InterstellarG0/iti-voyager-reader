@@ -103,6 +103,10 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
       opt.value = String(i); opt.textContent = `${v.name} — ${v.lang}${v.default ? ' (default)' : ''}`;
       voiceSelect.appendChild(opt);
     });
+    const piperOpt = document.createElement('option');
+    piperOpt.value = 'piper-libritts';
+    piperOpt.textContent = 'Piper — lilbritts_r (American English · downloads ~79 MB)';
+    voiceSelect.appendChild(piperOpt);
     if (previous && [...voiceSelect.options].some(o => o.value === previous)) voiceSelect.value = previous;
   }
   refreshVoices();
@@ -152,6 +156,12 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
     return voices[Number(voiceSelect.value)] || voices.find(v => v.default) || null;
   }
   function speakCurrent() {
+    if (voiceSelect.value === 'piper-libritts') {
+      if (!chunks.length) { sayStatus('Choose a text-based PDF first.'); return; }
+      if (window.voyagerPiperSpeak) { window.voyagerPiperSpeak(chunks[current]); return; }
+      sayStatus('Piper is starting up. If this message persists, reload the page.');
+      return;
+    }
     if (!chunks.length) { sayStatus('Choose a text-based PDF first.'); return; }
     if (current >= chunks.length) { active = false; sayStatus('Finished reading.'); updateProgress(); return; }
     speechSynthesis.cancel();
@@ -191,6 +201,54 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
   });
   speed.addEventListener('input', () => $('speedValue').textContent = `${Number(speed.value).toFixed(2).replace(/0$/,'')}×`);
 })();
+</script>
+
+<script type="module">
+import { PiperTTS, TextSplitterStream, RawAudio } from './piper-engine.js';
+const MODEL='https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx';
+const CONFIG='https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json';
+let piper=null, piperAudio=null, piperLoading=null, piperRun=0;
+const $p=id=>document.getElementById(id);
+async function ensurePiper(){
+  if(piper) return piper;
+  if(!piperLoading){
+    piperLoading=(async()=>{
+      $p('status').textContent='Loading Piper voice and runtime (first load ~79 MB)…';
+      piper=await PiperTTS.from_pretrained(MODEL,CONFIG);
+      if(!piperAudio) piperAudio=new Audio();
+      $p('status').textContent='Piper voice loaded.';
+      return piper;
+    })().catch(e=>{piperLoading=null;throw e;});
+  }
+  return piperLoading;
+}
+window.voyagerPiperSpeak=async function(text){
+  const run=++piperRun;
+  try{
+    await ensurePiper();
+    if(run!==piperRun)return;
+    const streamer=new TextSplitterStream();streamer.push(text);streamer.close();
+    const parts=[];let total=0,rate=22050;
+    for await(const chunk of piper.stream(streamer,{speakerId:0,lengthScale:1.0})){
+      if(run!==piperRun)return;
+      const audio=chunk.audio.audio;rate=chunk.audio.sampling_rate;parts.push(audio);total+=audio.length;
+    }
+    const merged=new Float32Array(total);let offset=0;
+    for(const part of parts){merged.set(part,offset);offset+=part.length;}
+    const blob=new RawAudio(merged,rate).toBlob();
+    if(piperAudio.src)URL.revokeObjectURL(piperAudio.src);
+    piperAudio.src=URL.createObjectURL(blob);
+    piperAudio.onended=()=>{
+      if(run!==piperRun)return;
+      if(window.voyagerPiperNext)window.voyagerPiperNext();
+    };
+    $p('status').textContent='Playing Piper narration…';
+    await piperAudio.play();
+  }catch(e){
+    console.error(e);$p('status').textContent='Piper error: '+(e?.message||e);
+  }
+};
+window.voyagerPiperStop=()=>{piperRun++;if(piperAudio){piperAudio.pause();piperAudio.currentTime=0;}};
 </script>
 </body>
 </html>
