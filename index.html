@@ -124,7 +124,7 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
   pdfFile.addEventListener('change', async () => {
     const file = pdfFile.files && pdfFile.files[0]; if (!file) return;
     if (!window.pdfjsLib) { sayStatus('PDF reader library is unavailable. Reload while connected to the internet.'); return; }
-    speechSynthesis.cancel(); active = false; chunks = []; current = 0; pdfName = file.name;
+    speechSynthesis.cancel(); if (window.voyagerPiperStop) window.voyagerPiperStop(); active = false; chunks = []; current = 0; pdfName = file.name;
     docName.textContent = file.name; sayStatus('Extracting text locally…');
     try {
       const bytes = await file.arrayBuffer();
@@ -155,6 +155,7 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
     const voices = speechSynthesis.getVoices();
     return voices[Number(voiceSelect.value)] || voices.find(v => v.default) || null;
   }
+  window.voyagerReaderPiperPlayCurrent = () => { if (active) speakCurrent(); };
   window.voyagerReaderPiperNext = () => {
     if (!active) return;
     current++; updateProgress();
@@ -251,7 +252,7 @@ window.voyagerPiperSpeak=async function(text){
  }catch(e){console.error(e);status.textContent='Piper error: '+(e&&e.message?e.message:String(e));}
 };
 window.voyagerPiperPause=()=>{if(audio)audio.pause();};
-window.voyagerPiperResume=()=>{if(audio&&audio.src&&audio.paused&&audio.currentTime>0&&audio.currentTime<audio.duration)audio.play().catch(e=>{status.textContent='Piper playback error: '+e.message;});else if(window.voyagerReaderPiperNext)window.voyagerReaderPiperNext();};
+window.voyagerPiperResume=()=>{if(audio&&audio.src&&audio.paused&&audio.currentTime>0&&audio.currentTime<audio.duration)audio.play().catch(e=>{status.textContent='Piper playback error: '+e.message;});else if(window.voyagerReaderPiperPlayCurrent)window.voyagerReaderPiperPlayCurrent();};
 window.voyagerPiperStop=()=>{runId++;if(audio){audio.pause();audio.currentTime=0;audio.removeAttribute('src');}if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null;}};
 </script>
 </body>
