@@ -218,8 +218,16 @@ export class PiperTTS {
           if (this.session && this.voiceConfig) {
             // Convert text to phonemes then to IDs
             const textPhonemes = await this.textToPhonemes(text);
-            const phonemeIds = this.phonemesToIds(textPhonemes);
-            
+            let phonemeIds = this.phonemesToIds(textPhonemes);
+
+            // Some PDF chunks contain only symbols/unsupported characters, and
+            // phonemizer versions can return an empty result for those chunks.
+            // Never pass a zero-length sequence to the ONNX Conv encoder.
+            if (!phonemeIds.length) {
+              console.warn('Skipping text chunk with no supported Piper phonemes:', text);
+              continue;
+            }
+
             // Prepare tensors for Piper model
             const ort = this.ort;
             if (!ort) throw new Error('ONNX Runtime was not initialized. Reload and try again.');
