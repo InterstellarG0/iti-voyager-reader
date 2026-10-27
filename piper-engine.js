@@ -1,8 +1,8 @@
 /* eslint-disable no-undef */
 
-function cleanTextForTTS(text) { return String(text || '').replace(/\\s+/g, ' ').trim(); }
+function cleanTextForTTS(text) { return String(text || '').replace(/\s+/g, ' ').trim(); }
 function chunkText(text) { return String(text || '').match(/[^.!?]+[.!?]*/g)?.map(s => s.trim()).filter(Boolean) || []; }
-async function cachedFetch(url)(url) { const key = 'iti-piper-cache:' + url; try { const cached = await caches.open('iti-piper-models-v1'); const hit = await cached.match(url); if (hit) return hit; const response = await fetch(url); if (!response.ok) throw new Error('Model fetch failed: HTTP ' + response.status); await cached.put(url, response.clone()); return response; } catch (e) { throw e; } }
+async function cachedFetch(url) { const key = 'iti-piper-cache:' + url; try { const cached = await caches.open('iti-piper-models-v1'); const hit = await cached.match(url); if (hit) return hit; const response = await fetch(url); if (!response.ok) throw new Error('Model fetch failed: HTTP ' + response.status); await cached.put(url, response.clone()); return response; } catch (e) { throw e; } }
 
 // Text splitting stream to break text into chunks
 export class TextSplitterStream {
