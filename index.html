@@ -162,12 +162,6 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
     if (current < chunks.length) speakCurrent();
     else { active = false; sayStatus('Finished reading.'); updateProgress(); }
   };
-  window.voyagerReaderPiperNext = () => {
-    if (!active) return;
-    current++; updateProgress();
-    if (current < chunks.length) speakCurrent();
-    else { active = false; sayStatus('Finished reading.'); updateProgress(); }
-  };
   function speakCurrent() {
     if (voiceSelect.value === 'piper-libritts') {
       if (!chunks.length) { sayStatus('Choose a text-based PDF first.'); return; }
