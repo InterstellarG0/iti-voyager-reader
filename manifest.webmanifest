@@ -1,0 +1,9 @@
+{
+  "name": "ITI Voyager Reader",
+  "short_name": "Voyager Reader",
+  "description": "Offline-first PDF listening reader",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#101114",
+  "theme_color": "#101114"
+}

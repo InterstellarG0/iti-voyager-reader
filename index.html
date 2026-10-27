@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<meta name="description" content="A private, offline-first PDF listening reader by Interstellar Technologies Initiative.">
+<link rel="manifest" href="./manifest.webmanifest">
+<title>ITI Voyager Reader</title>
+<style>
+:root{color-scheme:dark;--bg:#101114;--panel:#1b1d22;--line:#343741;--text:#f4f4f5;--muted:#b7bac4;--gold:#e5bd61}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:760px;margin:auto;padding:20px 16px 44px}
+header{padding:12px 0 18px;border-bottom:1px solid var(--line);margin-bottom:18px}
+.eyebrow{color:var(--gold);font-size:.78rem;font-weight:750;letter-spacing:.12em;text-transform:uppercase}
+h1{font-size:1.7rem;line-height:1.1;margin:.4rem 0}p{margin:.5rem 0;color:var(--muted)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin:14px 0}
+label{display:block;font-weight:650;margin-bottom:8px}
+input[type=file],select,button,input[type=range]{width:100%}
+input[type=file],select{background:#111216;color:var(--text);border:1px solid var(--line);padding:12px;border-radius:10px}
+.controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+button{border:1px solid var(--line);border-radius:12px;padding:13px 8px;background:#292c33;color:var(--text);font-weight:700;font-size:1rem}
+button.primary{background:var(--gold);color:#171717;border-color:var(--gold)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #8eb8ff;outline-offset:2px}
+.row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.small{font-size:.88rem}.status{min-height:1.4em;color:var(--gold);overflow-wrap:anywhere}
+#pageText{white-space:pre-wrap;max-height:34vh;overflow:auto;background:#111216;border-radius:10px;padding:12px;color:#e4e5e9}
+.range-label{display:flex;justify-content:space-between;gap:12px}
+footer{font-size:.82rem;color:var(--muted);padding-top:10px}
+@media(max-width:420px){main{padding:14px 12px 32px}.controls{grid-template-columns:repeat(2,minmax(0,1fr))}h1{font-size:1.5rem}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="eyebrow">Interstellar Technologies Initiative</div>
+  <h1>Voyager Reader</h1>
+  <p>Listen to your PDFs. Keep your documents on your device.</p>
+</header>
+
+<section class="panel">
+  <label for="pdfFile">1. Choose a PDF</label>
+  <input id="pdfFile" type="file" accept="application/pdf,.pdf">
+  <p class="small">Text-based PDFs are supported in this prototype. Scanned pages need OCR, which is a future upgrade.</p>
+  <div class="row"><span id="docName" class="small">No document selected</span><span id="pageCount" class="small"></span></div>
+  <p id="status" class="status" role="status" aria-live="polite">Ready. Choose a PDF to begin.</p>
+</section>
+
+<section class="panel">
+  <label for="voiceSelect">2. Narration voice</label>
+  <select id="voiceSelect" aria-label="Narration voice"><option>Loading available voices…</option></select>
+  <div class="row" style="margin-top:14px">
+    <div class="range-label"><label for="speed">Reading speed</label></div>
+    <strong id="speedValue">1.0×</strong>
+  </div>
+  <input id="speed" type="range" min="0.65" max="1.5" value="1" step="0.05">
+  <div class="controls">
+    <button class="primary" id="play">▶ Play</button>
+    <button id="pause">⏸ Pause</button>
+    <button id="stop">⏹ Stop</button>
+    <button id="back">⏪ Back 1 paragraph</button>
+    <button id="forward">Forward 1 paragraph ⏩</button>
+    <button id="bookmark">🔖 Save place</button>
+  </div>
+  <p class="small">Playback is split into short chunks to make long documents easier to handle. Browser speech support varies by device and installed voices.</p>
+</section>
+
+<section class="panel">
+  <div class="row"><strong>Reading position</strong><span id="progressText" class="small">0 / 0</span></div>
+  <progress id="progress" value="0" max="1" style="width:100%;margin:10px 0"></progress>
+  <div id="pageText" aria-label="Extracted PDF text">Your extracted text will appear here after you select a PDF.</div>
+</section>
+
+<footer>
+  <p><strong>Privacy:</strong> This prototype processes selected PDF text in your browser. It does not upload the PDF. Voice generation uses the speech engine available to your browser/device.</p>
+  <p><strong>Offline note:</strong> This starter version loads PDF.js from a CDN, so the first PDF import requires internet. For a truly offline release, bundle PDF.js locally and serve the app from a secure local origin or installable PWA. The browser speech engine must also have a downloaded offline voice.</p>
+</footer>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const pdfFile = $('pdfFile'), status = $('status'), docName = $('docName');
+  const pageCount = $('pageCount'), pageText = $('pageText'), progress = $('progress');
+  const progressText = $('progressText'), voiceSelect = $('voiceSelect'), speed = $('speed');
+  let chunks = [], current = 0, utterance = null, active = false, pdfName = '';
+  const sayStatus = msg => status.textContent = msg;
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  } else {
+    sayStatus('PDF.js could not load. Connect to the internet and reload this starter version.');
+  }
+
+  function refreshVoices() {
+    const previous = voiceSelect.value;
+    const voices = speechSynthesis.getVoices();
+    voiceSelect.innerHTML = '';
+    if (!voices.length) {
+      const opt = document.createElement('option'); opt.textContent = 'No browser voices detected'; voiceSelect.appendChild(opt); return;
+    }
+    voices.forEach((v, i) => {
+      const opt = document.createElement('option');
+      opt.value = String(i); opt.textContent = `${v.name} — ${v.lang}${v.default ? ' (default)' : ''}`;
+      voiceSelect.appendChild(opt);
+    });
+    if (previous && [...voiceSelect.options].some(o => o.value === previous)) voiceSelect.value = previous;
+  }
+  refreshVoices();
+  if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = refreshVoices;
+
+  function makeChunks(text) {
+    return text.split(/\n\s*\n|(?<=[.!?])\s+(?=[A-Z0-9“"'(])/u)
+      .map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  }
+  function updateProgress() {
+    progress.max = Math.max(chunks.length, 1); progress.value = current;
+    progressText.textContent = `${Math.min(current + (active ? 1 : 0), chunks.length)} / ${chunks.length}`;
+    pageText.textContent = chunks.length ? chunks.slice(Math.max(0,current-2), Math.min(chunks.length,current+5)).join('\n\n') : 'Your extracted PDF text will appear here.';
+  }
+  pdfFile.addEventListener('change', async () => {
+    const file = pdfFile.files && pdfFile.files[0]; if (!file) return;
+    if (!window.pdfjsLib) { sayStatus('PDF reader library is unavailable. Reload while connected to the internet.'); return; }
+    speechSynthesis.cancel(); active = false; chunks = []; current = 0; pdfName = file.name;
+    docName.textContent = file.name; sayStatus('Extracting text locally…');
+    try {
+      const bytes = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({data: bytes}).promise;
+      pageCount.textContent = `${pdf.numPages} pages`;
+      const pageParts = [];
+      for (let n=1; n<=pdf.numPages; n++) {
+        const page = await pdf.getPage(n);
+        const content = await page.getTextContent();
+        const text = content.items.map(item => item.str).join(' ').replace(/[ \t]+/g,' ').trim();
+        if (text) pageParts.push(`Page ${n}\n${text}`);
+        sayStatus(`Extracting page ${n} of ${pdf.numPages}…`);
+      }
+      chunks = makeChunks(pageParts.join('\n\n'));
+      if (!chunks.length) {
+        sayStatus('No selectable text found. This may be a scanned PDF; OCR is not included yet.');
+      } else {
+        const saved = Number(localStorage.getItem('voyager:'+pdfName));
+        current = Number.isInteger(saved) && saved >= 0 && saved < chunks.length ? saved : 0;
+        sayStatus(`Loaded ${chunks.length} text chunks. Documents stay in this browser session.`);
+      }
+      updateProgress();
+    } catch (e) {
+      console.error(e); sayStatus('Could not read this PDF. It may be encrypted, damaged, or unsupported.');
+    }
+  });
+  function selectedVoice() {
+    const voices = speechSynthesis.getVoices();
+    return voices[Number(voiceSelect.value)] || voices.find(v => v.default) || null;
+  }
+  function speakCurrent() {
+    if (!chunks.length) { sayStatus('Choose a text-based PDF first.'); return; }
+    if (current >= chunks.length) { active = false; sayStatus('Finished reading.'); updateProgress(); return; }
+    speechSynthesis.cancel();
+    utterance = new SpeechSynthesisUtterance(chunks[current]);
+    const voice = selectedVoice(); if (voice) utterance.voice = voice;
+    utterance.rate = Number(speed.value);
+    utterance.onstart = () => { active = true; sayStatus(`Reading section ${current+1} of ${chunks.length}…`); updateProgress(); };
+    utterance.onend = () => {
+      if (!active) return;
+      current++; updateProgress();
+      if (current < chunks.length) speakCurrent();
+      else { active = false; sayStatus('Finished reading.'); updateProgress(); }
+    };
+    utterance.onerror = e => { active = false; sayStatus(`Speech engine stopped: ${e.error || 'unknown error'}.`); };
+    speechSynthesis.speak(utterance);
+  }
+  $('play').addEventListener('click', () => {
+    if (!chunks.length) { sayStatus('Choose a PDF first.'); return; }
+    if (speechSynthesis.paused) { speechSynthesis.resume(); active = true; return; }
+    active = true; speakCurrent();
+  });
+  $('pause').addEventListener('click', () => {
+    if ('speechSynthesis' in window) { speechSynthesis.pause(); sayStatus('Paused.'); }
+  });
+  $('stop').addEventListener('click', () => {
+    speechSynthesis.cancel(); active = false; current = 0; updateProgress(); sayStatus('Stopped and returned to the beginning.');
+  });
+  $('back').addEventListener('click', () => {
+    speechSynthesis.cancel(); active = false; current = Math.max(0,current-1); updateProgress(); sayStatus('Moved back one section.');
+  });
+  $('forward').addEventListener('click', () => {
+    speechSynthesis.cancel(); active = false; current = Math.min(Math.max(0,chunks.length-1),current+1); updateProgress(); sayStatus('Moved forward one section.');
+  });
+  $('bookmark').addEventListener('click', () => {
+    if (!pdfName || !chunks.length) { sayStatus('Load a PDF before saving your place.'); return; }
+    localStorage.setItem('voyager:'+pdfName, String(current)); sayStatus(`Saved your place in ${pdfName}.`);
+  });
+  speed.addEventListener('input', () => $('speedValue').textContent = `${Number(speed.value).toFixed(2).replace(/0$/,'')}×`);
+})();
+</script>
+</body>
+</html>
