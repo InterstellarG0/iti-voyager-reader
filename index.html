@@ -324,6 +324,10 @@ window.voyagerPiperSpeak=async function(text){
  try{
   text=normalizePiperText(text);
   if(!text){if(window.voyagerReaderPiperNext)window.voyagerReaderPiperNext();return;}
+  // Mark this section busy so mashed Play presses can't restart it.
+  // Every restart used to queue a full fresh generation, and on a phone
+  // that backlog of inference work is what froze the page.
+  window.voyagerPiperBusy=true;
   const tts=await ensurePiper(); if(id!==runId)return;
   status.textContent='Generating Piper narration…';
   // Keep each inference request small so long PDF paragraphs don't stall phones.
@@ -356,7 +360,7 @@ window.voyagerPiperSpeak=async function(text){
    if(id!==runId||playing)return;
    const next=queue.shift();
    if(!next){
-    if(queueDone&&window.voyagerReaderPiperNext)window.voyagerReaderPiperNext();
+    if(queueDone){window.voyagerPiperBusy=false;if(window.voyagerReaderPiperNext)window.voyagerReaderPiperNext();}
     return;
    }
    playing=true;
@@ -366,7 +370,7 @@ window.voyagerPiperSpeak=async function(text){
    audio.play().then(()=>{status.textContent='Reading with Piper — lilbritts_r.';}).catch(e=>{playing=false;status.textContent='Piper playback error: '+e.message;});
   };
   // Let Stop clear pieces that were generated but not played yet.
-  window.voyagerPiperQueueClear=()=>{for(const q of queue)URL.revokeObjectURL(q.url);queue.length=0;queueDone=true;playing=false;};
+  window.voyagerPiperQueueClear=()=>{for(const q of queue)URL.revokeObjectURL(q.url);queue.length=0;queueDone=true;playing=false;window.voyagerPiperBusy=false;};
   for await(const item of tts.stream(stream,{speakerId:0,lengthScale:1/Number(document.getElementById('speed').value)})){
    if(id!==runId)return;
    const wav=new RawAudio(item.audio.audio,item.audio.sampling_rate).toBlob();
@@ -374,10 +378,10 @@ window.voyagerPiperSpeak=async function(text){
   }
   if(!queuedAny)throw new Error('Piper generated no audio. Check the browser console for the underlying model error.');
   queueDone=true;pump();
- }catch(e){console.error(e);status.textContent='Piper error: '+(e&&e.message?e.message:String(e));}
+ }catch(e){console.error(e);if(id===runId)window.voyagerPiperBusy=false;status.textContent='Piper error: '+(e&&e.message?e.message:String(e));}
 };
 window.voyagerPiperPause=()=>{if(audio)audio.pause();};
-window.voyagerPiperResume=()=>{if(audio&&audio.src&&audio.paused&&audio.currentTime>0&&audio.currentTime<audio.duration)audio.play().catch(e=>{status.textContent='Piper playback error: '+e.message;});else if(window.voyagerReaderPiperPlayCurrent)window.voyagerReaderPiperPlayCurrent();};
+window.voyagerPiperResume=()=>{if(audio&&audio.src&&audio.paused&&audio.currentTime>0&&audio.currentTime<audio.duration){audio.play().catch(e=>{status.textContent='Piper playback error: '+e.message;});return;}if(window.voyagerPiperBusy)return;if(window.voyagerReaderPiperPlayCurrent)window.voyagerReaderPiperPlayCurrent();};
 window.voyagerPiperStop=()=>{runId++;if(window.voyagerPiperQueueClear)window.voyagerPiperQueueClear();if(audio){audio.pause();audio.currentTime=0;audio.removeAttribute('src');}if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null;}};
 </script>
 </body>
