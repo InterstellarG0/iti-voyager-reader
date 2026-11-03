@@ -83,7 +83,7 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
   const pdfFile = $('pdfFile'), status = $('status'), docName = $('docName');
   const pageCount = $('pageCount'), pageText = $('pageText'), progress = $('progress');
   const progressText = $('progressText'), voiceSelect = $('voiceSelect'), speed = $('speed');
-  let chunks = [], current = 0, utterance = null, active = false, pdfName = '';
+  let chunks = [], current = 0, utterance = null, active = false, pdfName = '', piperWaitTimer = null;
   const sayStatus = msg => status.textContent = msg;
   if (window.pdfjsLib) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -210,7 +210,27 @@ footer{font-size:.82rem;color:var(--muted);padding-top:10px}
       if (!chunks.length) { sayStatus('Choose a text-based PDF first.'); return; }
       if (current >= chunks.length) { active = false; sayStatus('Finished reading.'); updateProgress(); return; }
       if (window.voyagerPiperSpeak) { window.voyagerPiperSpeak(chunks[current]); return; }
-      sayStatus('Piper is starting up. If this message persists, reload the page.');
+      // The Piper engine lives in the page's module script plus
+      // piper-engine.js beside it. If either hasn't arrived yet (slow
+      // network, or the page opened as a lone file without piper-engine.js
+      // next to it), the old code left a dead button and a vague message.
+      // Wait briefly for the engine, then say plainly what is wrong.
+      if (piperWaitTimer) return;
+      sayStatus('Piper engine is still loading…');
+      let waited = 0;
+      piperWaitTimer = setInterval(() => {
+        if (!active) { clearInterval(piperWaitTimer); piperWaitTimer = null; return; }
+        if (window.voyagerPiperSpeak) {
+          clearInterval(piperWaitTimer); piperWaitTimer = null;
+          if (voiceSelect.value === 'piper-libritts') speakCurrent();
+          return;
+        }
+        waited += 500;
+        if (waited >= 10000) {
+          clearInterval(piperWaitTimer); piperWaitTimer = null; active = false;
+          sayStatus('Piper engine did not load. Open the reader from its website, not the single file alone, and reload while connected to the internet.');
+        }
+      }, 500);
       return;
     }
     if (!chunks.length) { sayStatus('Choose a text-based PDF first.'); return; }
@@ -326,20 +346,39 @@ window.voyagerPiperSpeak=async function(text){
   const stream=new TextSplitterStream();
   for(const piece of (shortChunks.length?shortChunks:[text])) stream.push(piece);
   stream.close();
-  const pieces=[];let count=0,sampleRate=22050;
+  // Stream each piece to playback as soon as it finishes, instead of
+  // synthesizing the whole section first. ONNX inference runs on the main
+  // thread, so the old collect-everything-first flow froze the page between
+  // sections on phones: a short first section played, then the next
+  // section's full inference blocked all input until it finished.
+  const queue=[];let queueDone=false,playing=false,queuedAny=false;
+  const pump=()=>{
+   if(id!==runId||playing)return;
+   const next=queue.shift();
+   if(!next){
+    if(queueDone&&window.voyagerReaderPiperNext)window.voyagerReaderPiperNext();
+    return;
+   }
+   playing=true;
+   if(objectUrl)URL.revokeObjectURL(objectUrl);
+   objectUrl=next.url;audio.src=objectUrl;
+   audio.onended=()=>{playing=false;if(id===runId)pump();};
+   audio.play().then(()=>{status.textContent='Reading with Piper — lilbritts_r.';}).catch(e=>{playing=false;status.textContent='Piper playback error: '+e.message;});
+  };
+  // Let Stop clear pieces that were generated but not played yet.
+  window.voyagerPiperQueueClear=()=>{for(const q of queue)URL.revokeObjectURL(q.url);queue.length=0;queueDone=true;playing=false;};
   for await(const item of tts.stream(stream,{speakerId:0,lengthScale:1/Number(document.getElementById('speed').value)})){
-   if(id!==runId)return;const data=item.audio.audio;sampleRate=item.audio.sampling_rate;pieces.push(data);count+=data.length;
+   if(id!==runId)return;
+   const wav=new RawAudio(item.audio.audio,item.audio.sampling_rate).toBlob();
+   queue.push({url:URL.createObjectURL(wav)});queuedAny=true;pump();
   }
-  if(!count)throw new Error('Piper generated no audio. Check the browser console for the underlying model error.');
-  const merged=new Float32Array(count);let offset=0;for(const p of pieces){merged.set(p,offset);offset+=p.length;}
-  const wav=new RawAudio(merged,sampleRate).toBlob();if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(wav);
-  audio.src=objectUrl;audio.onended=()=>{if(id===runId&&window.voyagerReaderPiperNext)window.voyagerReaderPiperNext();};
-  await audio.play();status.textContent='Reading with Piper — lilbritts_r.';
+  if(!queuedAny)throw new Error('Piper generated no audio. Check the browser console for the underlying model error.');
+  queueDone=true;pump();
  }catch(e){console.error(e);status.textContent='Piper error: '+(e&&e.message?e.message:String(e));}
 };
 window.voyagerPiperPause=()=>{if(audio)audio.pause();};
 window.voyagerPiperResume=()=>{if(audio&&audio.src&&audio.paused&&audio.currentTime>0&&audio.currentTime<audio.duration)audio.play().catch(e=>{status.textContent='Piper playback error: '+e.message;});else if(window.voyagerReaderPiperPlayCurrent)window.voyagerReaderPiperPlayCurrent();};
-window.voyagerPiperStop=()=>{runId++;if(audio){audio.pause();audio.currentTime=0;audio.removeAttribute('src');}if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null;}};
+window.voyagerPiperStop=()=>{runId++;if(window.voyagerPiperQueueClear)window.voyagerPiperQueueClear();if(audio){audio.pause();audio.currentTime=0;audio.removeAttribute('src');}if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null;}};
 </script>
 </body>
 </html>
